@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_NAME="Watermark Studio"
 REPO_URL="https://github.com/ThamerLab/watermark-studio.git"
 RAW_BASE="https://raw.githubusercontent.com/ThamerLab/watermark-studio/main"
 MARKER="Watermark Studio managed container"
@@ -21,7 +20,9 @@ die() { printf "\n${RED}✖ Installation failed:${RESET} %s\n" "$*" >&2; [[ "$CR
 on_error() { local code=$? line=$1; printf "\n${RED}✖ Installation failed${RESET} at line %s (exit %s).\n" "$line" "$code" >&2; [[ "$CREATED_CT" == 1 ]] && printf "  Container %s was preserved for inspection.\n" "$CTID" >&2; exit "$code"; }
 trap 'on_error $LINENO' ERR
 
-require_integer() { [[ "$1" =~ ^[0-9]+$ ]] && (( "$1" >= "$2" && "$1" <= "$3" )) || die "$4"; }
+require_integer() {
+  if ! [[ "$1" =~ ^[0-9]+$ ]] || (( "$1" < "$2" || "$1" > "$3" )); then die "$4"; fi
+}
 prompt_default() { local label=$1 default=$2; read -r -p "$label [$default]: " REPLY; printf '%s' "${REPLY:-$default}"; }
 
 select_from() {
@@ -38,12 +39,14 @@ select_from() {
 }
 
 clear
-printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+printf '%b' "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
 printf "  Watermark Studio · Proxmox Installer\n"
-printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n\n"
+printf '%b' "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n\n"
 
 [[ ${EUID:-$(id -u)} -eq 0 ]] || die "Run this installer as root in the Proxmox VE shell."
-command -v pveversion >/dev/null 2>&1 && command -v pct >/dev/null 2>&1 && command -v pvesm >/dev/null 2>&1 || die "This script must run on a Proxmox VE host."
+if ! command -v pveversion >/dev/null 2>&1 || ! command -v pct >/dev/null 2>&1 || ! command -v pvesm >/dev/null 2>&1; then
+  die "This script must run on a Proxmox VE host."
+fi
 [[ -t 0 ]] || die "An interactive Proxmox shell is required."
 info "Checking network connectivity"
 curl -fsI --connect-timeout 10 "https://raw.githubusercontent.com/ThamerLab/watermark-studio/main/install.sh" >/dev/null || die "Cannot reach GitHub. Check DNS and internet access."
@@ -177,12 +180,12 @@ curl -fsSL "$RAW_BASE/uninstall.sh" -o /root/watermark-studio-uninstall.sh
 chmod 0700 /root/watermark-studio-update.sh /root/watermark-studio-uninstall.sh
 
 trap - ERR
-printf "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+printf '%b' "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
 printf " Watermark Studio\n"
-printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n\n"
-printf "${GREEN}✅ Installation successful${RESET}\n\n"
+printf '%b' "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n\n"
+printf '%b' "${GREEN}✅ Installation successful${RESET}\n\n"
 printf "Container ID : %s\nIP Address   : %s\nPort         : %s\n\n" "$CTID" "$LXC_IP" "$APP_PORT"
 printf "🌐 Open:\nhttp://%s:%s\n\n" "$LXC_IP" "$APP_PORT"
 printf "Update       : bash /root/watermark-studio-update.sh\n"
 printf "Uninstall    : bash /root/watermark-studio-uninstall.sh\n\n"
-printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+printf '%b' "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"

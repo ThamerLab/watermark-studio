@@ -14,7 +14,7 @@ PCT_CONFIG=$(pct config "$CTID" 2>/dev/null) || die "Container $CTID does not ex
 grep -Fq "Watermark Studio managed container" <<<"$PCT_CONFIG" || die "Safety check failed: container $CTID is not marked as Watermark Studio."
 HOSTNAME=$(awk -F': ' '$1=="hostname" {print $2}' <<<"$PCT_CONFIG")
 STATUS=$(pct status "$CTID" | awk '{print $2}')
-printf "\n${YELLOW}This will permanently delete exactly this LXC:${RESET}\n"
+printf '%b' "\n${YELLOW}This will permanently delete exactly this LXC:${RESET}\n"
 printf "  Container ID : %s\n  Hostname     : %s\n  Status       : %s\n\n" "$CTID" "${HOSTNAME:-unknown}" "$STATUS"
 printf "No other container will be modified. Back up any documents you need first.\n"
 read -r -p "Type DELETE $CTID to confirm: " CONFIRM
