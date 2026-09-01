@@ -37,3 +37,16 @@ jobs:
           done
           docker logs watermark-studio-test
           exit 1
+      - name: Verify real PowerPoint conversion
+        run: |
+          python3 -m pip install --quiet python-pptx
+          python3 - <<'PY'
+          from pptx import Presentation
+          deck = Presentation()
+          slide = deck.slides.add_slide(deck.slide_layouts[1])
+          slide.shapes.title.text = "Watermark Studio"
+          slide.placeholders[1].text = "اختبار تحويل PowerPoint باللغة العربية"
+          deck.save("/tmp/watermark-studio.pptx")
+          PY
+          curl -fsS -F "file=@/tmp/watermark-studio.pptx" http://127.0.0.1:18080/api/jobs \
+            | python3 -c "import json,sys; result=json.load(sys.stdin); assert result['page_count'] == 1 and result['preview_url']"
