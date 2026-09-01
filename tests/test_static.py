@@ -6,6 +6,10 @@ def test_arabic_rtl_ui_and_no_external_assets():
     assert 'lang="ar" dir="rtl"' in html
     assert "رفع الملف" in html
     assert "إنشاء PDF" in html
+    assert "قائمة العلامات المائية" in html
+    assert "تحميل نموذج CSV" in html
+    assert "أضف نص العلامة المائية في كل صف. اسم المجلد اختياري." in html
+    assert "قائمة المتدربين" not in html
     assert "http://" not in html and "https://" not in html
 
 

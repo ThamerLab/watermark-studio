@@ -133,13 +133,25 @@ def parse_pages(mode: str, expression: str, page_count: int) -> set[int]:
     return pages
 
 
-@lru_cache(maxsize=1)
-def _font_path() -> str:
+FONT_FILES = {
+    "noto-sans": "NotoSansArabic-Regular.ttf",
+    "noto-naskh": "NotoNaskhArabic-Regular.ttf",
+    "noto-kufi": "NotoKufiArabic-Regular.ttf",
+    "carlito": "Carlito-Regular.ttf",
+}
+
+
+@lru_cache(maxsize=8)
+def _font_path(font_name: str = "noto-sans") -> str:
+    if font_name not in FONT_FILES:
+        raise ProcessingError("الخط المحدد غير صالح.")
     configured = os.getenv("WATERMARK_FONT_PATH", "")
+    filename = FONT_FILES[font_name]
     candidates = [
         configured,
-        "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansArabic-Regular.ttf",
+        f"/usr/share/fonts/truetype/noto/{filename}",
+        f"/usr/share/fonts/opentype/noto/{filename}",
+        f"/usr/share/fonts/truetype/crosextra/{filename}",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "C:/Windows/Fonts/arial.ttf",
     ]
@@ -153,7 +165,14 @@ def _has_arabic(text: str) -> bool:
     return bool(re.search(r"[\u0600-\u06ff]", text))
 
 
-def make_text_watermark(text: str, font_size: int, color: str, opacity: float, rotation: int) -> bytes:
+def make_text_watermark(
+    text: str,
+    font_size: int,
+    color: str,
+    opacity: float,
+    rotation: int,
+    font_name: str = "noto-sans",
+) -> bytes:
     if not text.strip() or len(text) > 1000:
         raise ProcessingError("نص العلامة مطلوب ويجب ألا يتجاوز 1000 حرف.")
     if not 8 <= font_size <= 200:
@@ -166,7 +185,7 @@ def make_text_watermark(text: str, font_size: int, color: str, opacity: float, r
         raise ProcessingError("لون العلامة غير صالح.") from exc
 
     scale = 2
-    font = ImageFont.truetype(_font_path(), font_size * scale)
+    font = ImageFont.truetype(_font_path(font_name), font_size * scale)
     lines = text.splitlines() or [text]
     scratch = Image.new("RGBA", (1, 1))
     draw = ImageDraw.Draw(scratch)

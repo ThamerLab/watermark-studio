@@ -152,7 +152,7 @@ rm -rf /opt/watermark-studio
 git clone --depth 1 --branch main "$REPO_URL" /opt/watermark-studio >/dev/null
 cd /opt/watermark-studio
 umask 077
-printf 'APP_PORT=%s\nFILE_RETENTION_MINUTES=60\nMAX_UPLOAD_MB=100\nLIBREOFFICE_TIMEOUT_SECONDS=180\n' "$APP_PORT" >.env
+printf 'APP_PORT=%s\nFILE_RETENTION_MINUTES=60\nMAX_UPLOAD_MB=100\nLIBREOFFICE_TIMEOUT_SECONDS=180\nMAX_BATCH_FILES=20\nMAX_BATCH_ROWS=100\nMAX_BATCH_OUTPUTS=500\nMAX_BATCH_TOTAL_MB=500\n' "$APP_PORT" >.env
 docker compose up -d --build --remove-orphans
 for _ in {1..90}; do
   if curl -fsS "http://127.0.0.1:${APP_PORT}/health" 2>/dev/null | grep -Eq '"status"[[:space:]]*:[[:space:]]*"healthy"'; then exit 0; fi

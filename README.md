@@ -31,6 +31,8 @@ curl http://127.0.0.1:8080/health
 
 Documents live in a private Docker volume. Each job has a random UUID and is deleted after `FILE_RETENTION_MINUTES` (60 by default), or immediately from the UI. No Docker socket or external database is used.
 
+Batch mode accepts multiple PDF/PPTX sources and a generic CSV with required `watermark_text` and optional `output_name` columns. Each PPTX is converted once, then every watermark row is applied to every base PDF. The download is a ZIP with one folder per watermark. Download the Excel-compatible UTF-8 BOM template from the batch screen.
+
 ## Development tests
 
 ```bash

@@ -1,3 +1,5 @@
+import io
+import zipfile
 from pathlib import Path
 
 import pymupdf as fitz
@@ -76,3 +78,90 @@ def test_upload_limit_is_enforced(tmp_path, monkeypatch):
     with TestClient(main.app) as client:
         response = client.post("/api/jobs", files={"file": ("large.pdf", b"%PDF-" + b"x" * 50, "application/pdf")})
         assert response.status_code in {400, 413}
+
+
+def test_batch_template_and_complete_generic_batch_lifecycle(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "JOBS_DIR", tmp_path / "jobs")
+    csv_payload = (
+        "\ufeffwatermark_text,output_name\r\n"
+        '"نسخة خاصة - محمد أحمد - رقم 10542","محمد أحمد"\r\n'
+        '"سري - للاستخدام الداخلي فقط","نسخة داخلية"\r\n'
+    ).encode("utf-8")
+    with TestClient(main.app) as client:
+        template = client.get("/api/batch/template")
+        assert template.status_code == 200
+        assert template.content.startswith(b"\xef\xbb\xbf")
+        assert 'filename="watermark-studio-template.csv"' in template.headers["content-disposition"]
+
+        created = client.post(
+            "/api/batch/jobs",
+            files=[
+                ("files", ("Course Guide.pdf", pdf_bytes(2), "application/pdf")),
+                ("files", ("Module 1.pdf", pdf_bytes(1), "application/pdf")),
+                ("watermarks_csv", ("watermarks.csv", csv_payload, "text/csv")),
+            ],
+        )
+        assert created.status_code == 201, created.text
+        batch = created.json()
+        assert batch["source_count"] == 2
+        assert batch["watermark_count"] == 2
+        assert batch["output_count"] == 4
+        assert batch["watermarks"][0]["watermark_text"] == "نسخة خاصة - محمد أحمد - رقم 10542"
+
+        generated = client.post(
+            f"/api/batch/jobs/{batch['id']}/generate",
+            data={"font_name": "noto-sans", "font_size": "36", "opacity": "0.2", "rotation": "-45", "color": "#1f2937", "position": "tiled", "page_mode": "all", "custom_pages": ""},
+        )
+        assert generated.status_code == 200, generated.text
+        assert generated.json()["generated_count"] == 4
+        downloaded = client.get(generated.json()["download_url"])
+        assert downloaded.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(downloaded.content)) as archive:
+            names = archive.namelist()
+            assert names == [
+                "محمد أحمد/Course Guide - محمد أحمد.pdf",
+                "محمد أحمد/Module 1 - محمد أحمد.pdf",
+                "نسخة داخلية/Course Guide - نسخة داخلية.pdf",
+                "نسخة داخلية/Module 1 - نسخة داخلية.pdf",
+            ]
+            with fitz.open(stream=archive.read(names[0]), filetype="pdf") as result:
+                assert result.page_count == 2
+                assert len(result[0].get_images(full=True)) > 0
+
+        assert client.delete(f"/api/jobs/{batch['id']}").status_code == 204
+
+
+def test_batch_converts_each_pptx_once_before_all_watermarks(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "JOBS_DIR", tmp_path / "jobs")
+    conversions = []
+
+    def fake_convert(source, output_dir, timeout):
+        conversions.append(source)
+        output = output_dir / f"{source.stem}.pdf"
+        output.write_bytes(pdf_bytes(1))
+        return output
+
+    monkeypatch.setattr(main, "convert_pptx", fake_convert)
+    pptx = io.BytesIO()
+    with zipfile.ZipFile(pptx, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("ppt/presentation.xml", "<p:presentation/>")
+    csv_payload = b"watermark_text,output_name\nFirst,One\nSecond,Two\nThird,Three\n"
+    with TestClient(main.app) as client:
+        created = client.post(
+            "/api/batch/jobs",
+            files=[
+                ("files", ("Deck.pptx", pptx.getvalue(), "application/vnd.openxmlformats-officedocument.presentationml.presentation")),
+                ("watermarks_csv", ("watermarks.csv", csv_payload, "text/csv")),
+            ],
+        )
+        assert created.status_code == 201, created.text
+        batch = created.json()
+        assert len(conversions) == 1
+        generated = client.post(
+            f"/api/batch/jobs/{batch['id']}/generate",
+            data={"position": "center", "page_mode": "all"},
+        )
+        assert generated.status_code == 200, generated.text
+        assert generated.json()["generated_count"] == 3
+        assert len(conversions) == 1

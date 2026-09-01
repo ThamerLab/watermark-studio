@@ -37,16 +37,38 @@ jobs:
           done
           docker logs watermark-studio-test
           exit 1
-      - name: Verify real PowerPoint conversion
+      - name: Verify real PowerPoint batch conversion and ZIP
         run: |
-          python3 -m pip install --quiet python-pptx
+          python3 -m pip install --quiet python-pptx PyMuPDF
           python3 - <<'PY'
+          import csv
           from pptx import Presentation
           deck = Presentation()
           slide = deck.slides.add_slide(deck.slide_layouts[1])
           slide.shapes.title.text = "Watermark Studio"
           slide.placeholders[1].text = "اختبار تحويل PowerPoint باللغة العربية"
           deck.save("/tmp/watermark-studio.pptx")
+          with open("/tmp/watermarks.csv", "w", encoding="utf-8-sig", newline="") as stream:
+              writer = csv.writer(stream)
+              writer.writerow(["watermark_text", "output_name"])
+              writer.writerow(["نسخة خاصة - للاستخدام الداخلي فقط", "نسخة داخلية"])
+              writer.writerow(["CONFIDENTIAL - ABC Company", "ABC Company"])
           PY
-          curl -fsS -F "file=@/tmp/watermark-studio.pptx" http://127.0.0.1:18080/api/jobs \
-            | python3 -c "import json,sys; result=json.load(sys.stdin); assert result['page_count'] == 1 and result['preview_url']"
+          curl -fsS -F "files=@/tmp/watermark-studio.pptx" -F "watermarks_csv=@/tmp/watermarks.csv" \
+            http://127.0.0.1:18080/api/batch/jobs >/tmp/batch.json
+          job_id=$(python3 -c "import json; result=json.load(open('/tmp/batch.json')); assert result['output_count']==2; print(result['id'])")
+          curl -fsS -X POST -F "font_name=noto-naskh" -F "position=tiled" -F "page_mode=all" \
+            "http://127.0.0.1:18080/api/batch/jobs/${job_id}/generate" >/tmp/generated.json
+          curl -fsS "http://127.0.0.1:18080/api/batch/jobs/${job_id}/download" >/tmp/batch.zip
+          python3 - <<'PY'
+          import io, zipfile
+          import fitz
+          with zipfile.ZipFile("/tmp/batch.zip") as archive:
+              names = archive.namelist()
+              assert names == [
+                  "نسخة داخلية/watermark-studio - نسخة داخلية.pdf",
+                  "ABC Company/watermark-studio - ABC Company.pdf",
+              ]
+              with fitz.open(stream=archive.read(names[0]), filetype="pdf") as result:
+                  assert result.page_count == 1 and result[0].get_images(full=True)
+          PY

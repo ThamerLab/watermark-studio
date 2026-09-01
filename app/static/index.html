@@ -1,93 +1,62 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="إضافة علامات مائية خاصة إلى ملفات PDF وPowerPoint">
-  <title>Watermark Studio</title>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="إضافة علامات مائية خاصة إلى ملفات PDF وPowerPoint"><title>Watermark Studio</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/" aria-label="Watermark Studio"><span class="brand-mark">W</span><span>Watermark <b>Studio</b></span></a>
-    <span class="privacy">ملفاتك تبقى على خادمك الخاص</span>
-  </header>
+  <header class="topbar"><a class="brand" href="/" aria-label="Watermark Studio"><span class="brand-mark">W</span><span>Watermark <b>Studio</b></span></a><span class="privacy">ملفاتك تبقى على خادمك الخاص</span></header>
   <main>
-    <section class="hero">
-      <span class="eyebrow">أداة خاصة وآمنة</span>
-      <h1>علامتك المائية،<br><em>ببساطة.</em></h1>
-      <p>حوّل عروض PowerPoint أو ملفات PDF إلى نسخة محمية بعلامتك المائية.</p>
+    <section class="hero"><span class="eyebrow">أداة خاصة وآمنة</span><h1>علامتك المائية،<br><em>ببساطة.</em></h1><p>حوّل عروض PowerPoint أو ملفات PDF إلى نسخ محمية بعلاماتك المائية.</p></section>
+    <div class="mode-switch" role="tablist" aria-label="وضع المعالجة"><button id="singleModeButton" class="active" type="button" role="tab" aria-selected="true">ملف واحد</button><button id="batchModeButton" type="button" role="tab" aria-selected="false">معالجة دفعة</button></div>
+
+    <section id="singleMode">
+      <nav class="steps" aria-label="مراحل العمل الفردي"><span class="active"><b>١</b> رفع الملف</span><i></i><span><b>٢</b> إعداد العلامة</span><i></i><span><b>٣</b> معاينة وإنشاء</span></nav>
+      <section id="uploadCard" class="card upload-card">
+        <label id="dropZone" class="drop-zone" for="documentInput"><input id="documentInput" type="file" accept=".pdf,.pptx" hidden><span class="upload-icon">↑</span><strong>اسحب ملفك إلى هنا</strong><span>أو اضغط للاختيار من جهازك</span><small>PDF أو PPTX — حتى 100 ميجابايت</small></label>
+        <div id="uploadProgress" class="progress hidden"><span></span><p>جارٍ تجهيز الملف والمعاينة…</p></div>
+      </section>
+      <section id="workspace" class="workspace hidden">
+        <div class="editor">
+          <div class="card file-card"><div class="file-icon">PDF</div><div><strong id="fileName"></strong><span id="fileMeta"></span></div><button id="replaceFile" class="icon-button" type="button" title="استبدال الملف">×</button></div>
+          <div class="card settings-card">
+            <div class="section-title"><span>01</span><div><h2>العلامة النصية</h2><p>اكتب النص وخصّص مظهره</p></div></div>
+            <label>نص العلامة<textarea id="watermarkText" rows="3" maxlength="1000" placeholder="مثال: نسخة خاصة — اسم العميل">نسخة خاصة</textarea></label>
+            <label>الخط<select id="fontName"><option value="noto-sans">Noto Sans Arabic</option><option value="noto-naskh">Noto Naskh Arabic</option><option value="noto-kufi">Noto Kufi Arabic</option><option value="carlito">Carlito</option></select></label>
+            <div class="grid two"><label>حجم الخط <output id="fontSizeOut">48</output><input id="fontSize" type="range" min="8" max="120" value="48"></label><label>الشفافية <output id="opacityOut">25%</output><input id="opacity" type="range" min="5" max="100" value="25"></label><label>الدوران <output id="rotationOut">-35°</output><input id="rotation" type="range" min="-180" max="180" value="-35"></label><label>اللون<input id="color" type="color" value="#1f2937"></label></div>
+            <label>الموضع<select id="position"><option value="center">الوسط</option><option value="tiled">متكرر على الصفحة</option><option value="top-right">أعلى اليمين</option><option value="top-center">أعلى الوسط</option><option value="top-left">أعلى اليسار</option><option value="bottom-right">أسفل اليمين</option><option value="bottom-center">أسفل الوسط</option><option value="bottom-left">أسفل اليسار</option></select></label>
+          </div>
+          <div class="card settings-card">
+            <div class="section-title"><span>02</span><div><h2>صورة العلامة <small>اختياري</small></h2><p>PNG أو JPEG</p></div></div>
+            <label class="image-picker" for="imageInput"><input id="imageInput" type="file" accept="image/png,image/jpeg" hidden><span id="imageLabel">اختر صورة العلامة</span></label>
+            <div class="grid two"><label>الحجم <output id="imageScaleOut">25%</output><input id="imageScale" type="range" min="5" max="80" value="25"></label><label>الشفافية <output id="imageOpacityOut">30%</output><input id="imageOpacity" type="range" min="5" max="100" value="30"></label></div>
+            <label>الموضع<select id="imagePosition"><option value="center">الوسط</option><option value="tiled">متكرر على الصفحة</option><option value="top-right">أعلى اليمين</option><option value="top-center">أعلى الوسط</option><option value="top-left">أعلى اليسار</option><option value="bottom-right">أسفل اليمين</option><option value="bottom-center">أسفل الوسط</option><option value="bottom-left">أسفل اليسار</option></select></label>
+          </div>
+          <div class="card settings-card"><div class="section-title"><span>03</span><div><h2>الصفحات</h2><p>حدد أين تظهر العلامة</p></div></div><div class="segmented"><label><input type="radio" name="pages" value="all" checked><span>كل الصفحات</span></label><label><input type="radio" name="pages" value="first"><span>الأولى فقط</span></label><label><input type="radio" name="pages" value="custom"><span>مخصصة</span></label></div><label id="customPagesWrap" class="hidden">أرقام الصفحات<input id="customPages" type="text" inputmode="numeric" dir="ltr" placeholder="1-3,7,10-12"></label></div>
+        </div>
+        <aside class="preview-panel"><div class="preview-head"><div><h2>المعاينة</h2><span>الصفحة الأولى</span></div><span id="pageCount"></span></div><div id="previewCanvas" class="preview-canvas"><img id="pagePreview" alt="معاينة الصفحة"><div id="textOverlay" class="text-overlay"></div><img id="imageOverlay" class="image-overlay hidden" alt="صورة العلامة"></div><p class="preview-note">المعاينة تقريبية؛ يتم تطبيق العلامة النهائية على الخادم.</p><button id="generateButton" class="primary" type="button"><span>إنشاء PDF</span><b>←</b></button><div id="resultBox" class="result hidden"><strong>تم إنشاء الملف بنجاح</strong><a id="downloadLink" class="download" href="#">تحميل PDF</a><button id="deleteButton" type="button">حذف الملفات الآن</button></div><p id="errorBox" class="error hidden" role="alert"></p></aside>
+      </section>
     </section>
 
-    <nav class="steps" aria-label="مراحل العمل">
-      <span class="active"><b>١</b> رفع الملف</span><i></i><span><b>٢</b> إعداد العلامة</span><i></i><span><b>٣</b> معاينة وإنشاء</span>
-    </nav>
-
-    <section id="uploadCard" class="card upload-card">
-      <label id="dropZone" class="drop-zone" for="documentInput">
-        <input id="documentInput" type="file" accept=".pdf,.pptx" hidden>
-        <span class="upload-icon">↑</span>
-        <strong>اسحب ملفك إلى هنا</strong>
-        <span>أو اضغط للاختيار من جهازك</span>
-        <small>PDF أو PPTX — حتى <span id="maxUpload">100</span> ميجابايت</small>
-      </label>
-      <div id="uploadProgress" class="progress hidden"><span></span><p>جارٍ تجهيز الملف والمعاينة…</p></div>
-    </section>
-
-    <section id="workspace" class="workspace hidden">
-      <div class="editor">
-        <div class="card file-card">
-          <div class="file-icon">PDF</div>
-          <div><strong id="fileName"></strong><span id="fileMeta"></span></div>
-          <button id="replaceFile" class="icon-button" type="button" title="استبدال الملف">×</button>
+    <section id="batchMode" class="hidden">
+      <nav class="steps batch-steps" aria-label="مراحل معالجة الدفعة"><span class="active"><b>١</b> رفع الملفات</span><i></i><span><b>٢</b> قائمة العلامات المائية</span><i></i><span><b>٣</b> شكل العلامة</span><i></i><span><b>٤</b> إنشاء ZIP</span></nav>
+      <section id="batchSetup" class="batch-setup">
+        <div class="card batch-input-card"><div class="section-title"><span>01</span><div><h2>رفع الملفات</h2><p>يمكنك اختيار عدة ملفات PDF أو PPTX</p></div></div><label id="batchFilesZone" class="compact-drop" for="batchFilesInput"><input id="batchFilesInput" type="file" accept=".pdf,.pptx" multiple hidden><span class="upload-icon">↑</span><strong>اختر الملفات المصدر</strong><small>يُحوّل كل PowerPoint مرة واحدة فقط</small></label><ul id="batchFilesList" class="selected-list"></ul></div>
+        <div class="card batch-input-card"><div class="section-title"><span>02</span><div><h2>قائمة العلامات المائية</h2><p>أضف نص العلامة المائية في كل صف. اسم المجلد اختياري.</p></div></div><label id="batchCsvZone" class="compact-drop" for="batchCsvInput"><input id="batchCsvInput" type="file" accept=".csv,text/csv" hidden><span class="csv-icon">CSV</span><strong id="batchCsvLabel">اختر ملف CSV</strong></label><a class="template-link" href="/api/batch/template" download="watermark-studio-template.csv">تحميل نموذج CSV</a></div>
+        <button id="prepareBatchButton" class="primary batch-prepare" type="button" disabled><span>استيراد وتجهيز الدفعة</span><b>←</b></button>
+        <div id="batchProgress" class="progress card hidden"><span></span><p>جارٍ رفع الملفات وتحويل عروض PowerPoint مرة واحدة…</p></div><p id="batchSetupError" class="error hidden" role="alert"></p>
+      </section>
+      <section id="batchWorkspace" class="workspace hidden">
+        <div class="editor">
+          <div class="card batch-summary"><div><strong id="batchImported"></strong><span id="batchSourcesSummary"></span></div><b id="batchEquation"></b></div>
+          <div class="card settings-card"><div class="section-title"><span>03</span><div><h2>شكل العلامة المائية</h2><p>تُطبق هذه الإعدادات على كل نص في CSV</p></div></div><div class="sample-watermark"><span>نموذج النص من الصف الأول</span><strong id="batchSampleText"></strong></div><label>الخط<select id="batchFontName"><option value="noto-sans">Noto Sans Arabic</option><option value="noto-naskh">Noto Naskh Arabic</option><option value="noto-kufi">Noto Kufi Arabic</option><option value="carlito">Carlito</option></select></label><div class="grid two"><label>حجم الخط <output id="batchFontSizeOut">48</output><input id="batchFontSize" type="range" min="8" max="120" value="48"></label><label>الشفافية <output id="batchOpacityOut">20%</output><input id="batchOpacity" type="range" min="5" max="100" value="20"></label><label>الدوران <output id="batchRotationOut">-45°</output><input id="batchRotation" type="range" min="-180" max="180" value="-45"></label><label>اللون<input id="batchColor" type="color" value="#1f2937"></label></div><label>الموضع<select id="batchPosition"><option value="tiled">متكرر على الصفحة</option><option value="center">الوسط</option><option value="top-right">أعلى اليمين</option><option value="top-center">أعلى الوسط</option><option value="top-left">أعلى اليسار</option><option value="bottom-right">أسفل اليمين</option><option value="bottom-center">أسفل الوسط</option><option value="bottom-left">أسفل اليسار</option></select></label></div>
+          <div class="card settings-card"><div class="section-title"><span>04</span><div><h2>الصفحات</h2><p>اختيار عالمي لكل الملفات الناتجة</p></div></div><div class="segmented"><label><input type="radio" name="batchPages" value="all" checked><span>كل الصفحات</span></label><label><input type="radio" name="batchPages" value="first"><span>الأولى فقط</span></label><label><input type="radio" name="batchPages" value="custom"><span>مخصصة</span></label></div><label id="batchCustomPagesWrap" class="hidden">أرقام الصفحات<input id="batchCustomPages" type="text" inputmode="numeric" dir="ltr" placeholder="1-3,7,10-12"></label></div>
         </div>
-
-        <div class="card settings-card">
-          <div class="section-title"><span>01</span><div><h2>العلامة النصية</h2><p>اكتب النص وخصّص مظهره</p></div></div>
-          <label>نص العلامة<textarea id="watermarkText" rows="3" maxlength="1000" placeholder="مثال: نسخة خاصة — اسم العميل">نسخة خاصة</textarea></label>
-          <div class="grid two">
-            <label>حجم الخط <output id="fontSizeOut">48</output><input id="fontSize" type="range" min="8" max="120" value="48"></label>
-            <label>الشفافية <output id="opacityOut">25%</output><input id="opacity" type="range" min="5" max="100" value="25"></label>
-            <label>الدوران <output id="rotationOut">-35°</output><input id="rotation" type="range" min="-180" max="180" value="-35"></label>
-            <label>اللون<input id="color" type="color" value="#1f2937"></label>
-          </div>
-          <label>الموضع<select id="position">
-            <option value="center">الوسط</option><option value="tiled">متكرر على الصفحة</option>
-            <option value="top-right">أعلى اليمين</option><option value="top-center">أعلى الوسط</option><option value="top-left">أعلى اليسار</option>
-            <option value="bottom-right">أسفل اليمين</option><option value="bottom-center">أسفل الوسط</option><option value="bottom-left">أسفل اليسار</option>
-          </select></label>
-        </div>
-
-        <div class="card settings-card">
-          <div class="section-title"><span>02</span><div><h2>صورة العلامة <small>اختياري</small></h2><p>PNG أو JPEG</p></div></div>
-          <label class="image-picker" for="imageInput"><input id="imageInput" type="file" accept="image/png,image/jpeg" hidden><span id="imageLabel">اختر صورة العلامة</span></label>
-          <div class="grid two">
-            <label>الحجم <output id="imageScaleOut">25%</output><input id="imageScale" type="range" min="5" max="80" value="25"></label>
-            <label>الشفافية <output id="imageOpacityOut">30%</output><input id="imageOpacity" type="range" min="5" max="100" value="30"></label>
-          </div>
-          <label>الموضع<select id="imagePosition">
-            <option value="center">الوسط</option><option value="tiled">متكرر على الصفحة</option><option value="top-right">أعلى اليمين</option><option value="top-center">أعلى الوسط</option><option value="top-left">أعلى اليسار</option><option value="bottom-right">أسفل اليمين</option><option value="bottom-center">أسفل الوسط</option><option value="bottom-left">أسفل اليسار</option>
-          </select></label>
-        </div>
-
-        <div class="card settings-card">
-          <div class="section-title"><span>03</span><div><h2>الصفحات</h2><p>حدد أين تظهر العلامة</p></div></div>
-          <div class="segmented"><label><input type="radio" name="pages" value="all" checked><span>كل الصفحات</span></label><label><input type="radio" name="pages" value="first"><span>الأولى فقط</span></label><label><input type="radio" name="pages" value="custom"><span>مخصصة</span></label></div>
-          <label id="customPagesWrap" class="hidden">أرقام الصفحات<input id="customPages" type="text" inputmode="numeric" dir="ltr" placeholder="1-3,7,10-12"></label>
-        </div>
-      </div>
-
-      <aside class="preview-panel">
-        <div class="preview-head"><div><h2>المعاينة</h2><span>الصفحة الأولى</span></div><span id="pageCount"></span></div>
-        <div id="previewCanvas" class="preview-canvas"><img id="pagePreview" alt="معاينة الصفحة"><div id="textOverlay" class="text-overlay"></div><img id="imageOverlay" class="image-overlay hidden" alt="صورة العلامة"></div>
-        <p class="preview-note">المعاينة تقريبية؛ يتم تطبيق العلامة النهائية على الخادم.</p>
-        <button id="generateButton" class="primary" type="button"><span>إنشاء PDF</span><b>←</b></button>
-        <div id="resultBox" class="result hidden"><strong>تم إنشاء الملف بنجاح</strong><a id="downloadLink" class="download" href="#">تحميل PDF</a><button id="deleteButton" type="button">حذف الملفات الآن</button></div>
-        <p id="errorBox" class="error hidden" role="alert"></p>
-      </aside>
+        <aside class="preview-panel"><div class="preview-head"><div><h2>معاينة الدفعة</h2><span>الملف الأول · العلامة الأولى</span></div><span id="batchPageCount"></span></div><div id="batchPreviewCanvas" class="preview-canvas"><img id="batchPagePreview" alt="معاينة أول ملف"><div id="batchTextOverlay" class="text-overlay"></div></div><p class="preview-note">سيحتوي ZIP على مجلد مستقل لكل علامة مائية.</p><button id="generateBatchButton" class="primary" type="button"><span>إنشاء ملفات الدفعة</span><b>←</b></button><div id="batchResultBox" class="result hidden"><strong id="batchResultText">تم إنشاء الدفعة بنجاح</strong><a id="batchDownloadLink" class="download" href="#">تحميل ZIP</a><button id="batchDeleteButton" type="button">حذف الملفات الآن</button></div><p id="batchErrorBox" class="error hidden" role="alert"></p></aside>
+      </section>
     </section>
   </main>
-  <footer><span>Watermark Studio</span><span>حذف تلقائي للملفات بعد 60 دقيقة</span></footer>
-  <script src="/static/app.js" defer></script>
+  <footer><span>Watermark Studio</span><span>حذف تلقائي للملفات بعد 60 دقيقة</span></footer><script src="/static/app.js" defer></script>
 </body>
 </html>
