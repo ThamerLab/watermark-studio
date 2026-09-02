@@ -31,7 +31,9 @@ curl http://127.0.0.1:8080/health
 
 Documents live in a private Docker volume. Each job has a random UUID and is deleted after `FILE_RETENTION_MINUTES` (60 by default), or immediately from the UI. No Docker socket or external database is used.
 
-Batch mode accepts multiple PDF/PPTX sources and a generic CSV with required `watermark_text` and optional `output_name` columns. Each PPTX is converted once, then every watermark row is applied to every base PDF. Generation runs in the background with disk-backed progress polling, and the download is exposed only after the ZIP is complete. Download the Excel-compatible UTF-8 BOM template from the batch screen.
+Batch mode accepts multiple PDF/PPTX sources and a generic CSV with required `watermark_text` and optional `output_name` columns. Each PPTX is converted once, then every watermark row is applied to every base PDF. Glyph-aware font fallback covers Arabic, Latin, and mixed lines. On-demand exact previews reuse the final PDF pipeline and are cached inside the temporary job; preflight and review state are also stored there.
+
+Generation runs in the background with disk-backed progress polling, and the download is exposed only after the ZIP is complete. ZIPs use Windows-friendly paths, source-only filenames by default, collision-safe names, and a UTF-8 BOM `_manifest.csv`. Download the Excel-compatible CSV template from the batch screen.
 
 ## Development tests
 

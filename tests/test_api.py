@@ -142,11 +142,13 @@ def test_batch_template_and_complete_generic_batch_lifecycle(tmp_path, monkeypat
         with zipfile.ZipFile(io.BytesIO(downloaded.content)) as archive:
             names = archive.namelist()
             assert names == [
-                "محمد أحمد/Course Guide - محمد أحمد.pdf",
-                "محمد أحمد/Module 1 - محمد أحمد.pdf",
-                "نسخة داخلية/Course Guide - نسخة داخلية.pdf",
-                "نسخة داخلية/Module 1 - نسخة داخلية.pdf",
+                "محمد أحمد/Course Guide.pdf",
+                "محمد أحمد/Module 1.pdf",
+                "نسخة داخلية/Course Guide.pdf",
+                "نسخة داخلية/Module 1.pdf",
+                "_manifest.csv",
             ]
+            assert archive.read("_manifest.csv").startswith(b"\xef\xbb\xbf")
             with fitz.open(stream=archive.read(names[0]), filetype="pdf") as result:
                 assert result.page_count == 2
                 assert len(result[0].get_images(full=True)) > 0

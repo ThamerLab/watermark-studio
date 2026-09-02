@@ -10,6 +10,7 @@ RUN apt-get update \
        fontconfig \
        fonts-crosextra-caladea \
        fonts-crosextra-carlito \
+       fonts-dejavu-core \
        fonts-liberation2 \
        fonts-noto-core \
        libraqm0 \

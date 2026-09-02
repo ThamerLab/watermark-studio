@@ -8,9 +8,14 @@ def test_arabic_rtl_ui_and_no_external_assets():
     assert "إنشاء PDF" in html
     assert "قائمة العلامات المائية" in html
     assert "تحميل نموذج CSV" in html
+    for label in ["معاينة سريعة", "معاينة دقيقة", "مراجعة العلامات", "فحص ما قبل التصدير", "اعتماد هذه العلامة", "نمط أسماء الملفات", "اسم الملف فقط"]:
+        assert label in html
     assert "أضف نص العلامة المائية في كل صف. اسم المجلد اختياري." in html
     assert "قائمة المتدربين" not in html
     assert "http://" not in html and "https://" not in html
+    javascript = Path("app/static/app.js").read_text(encoding="utf-8")
+    assert "Math.min(6, queue.length)" in javascript
+    assert "/preflight" in javascript and "/review/" in javascript and "/preview" in javascript
 
 
 def test_compose_has_health_and_hardening():
@@ -19,6 +24,9 @@ def test_compose_has_health_and_hardening():
     assert "no-new-privileges:true" in compose
     assert "cap_drop" in compose
     assert "/var/run/docker.sock" not in compose
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+    assert "fonts-dejavu-core" in dockerfile
+    assert "libraqm0" in dockerfile
 
 
 def test_installer_has_required_guards_and_flow():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -19,18 +20,21 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .batch import csv_template_bytes, output_pdf_name, parse_watermark_csv, zip_path
+from .batch import FILENAME_MODES, clean_source_stem, csv_template_bytes, manifest_csv_bytes, parse_watermark_csv, source_pdf_names, zip_path
 from .processing import (
     POSITIONS,
     ProcessingError,
     convert_pptx,
     create_watermarked_pdf,
+    glyph_preflight,
     make_text_watermark,
     normalize_image_watermark,
     parse_pages,
     render_first_page,
+    render_exact_preview,
     validate_text_watermark_settings,
     validate_document,
+    watermark_pixel_size,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -50,13 +54,14 @@ ALLOWED_EXTENSIONS = {".pdf", ".pptx"}
 UNSAFE_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 job_locks: dict[str, asyncio.Lock] = {}
 batch_tasks: dict[str, asyncio.Task] = {}
+preview_locks: dict[str, asyncio.Lock] = {}
 
 
 def safe_name(filename: str | None) -> str:
     name = Path((filename or "document").replace("\\", "/")).name
     name = unicodedata.normalize("NFKC", name)
     cleaned = UNSAFE_NAME.sub("_", name).strip(" ._")
-    return (cleaned or "document")[:120]
+    return (cleaned or "document")[:240]
 
 
 def job_dir(job_id: str) -> Path:
@@ -78,12 +83,22 @@ def load_metadata(path: Path) -> dict:
 
 
 def atomic_write_json(destination: Path, payload: dict) -> None:
-    temporary = destination.with_suffix(destination.suffix + ".tmp")
-    with temporary.open("w", encoding="utf-8") as stream:
-        json.dump(payload, stream, ensure_ascii=False)
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temporary, destination)
+    temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        for attempt in range(5):
+            try:
+                os.replace(temporary, destination)
+                return
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.01)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def read_batch_status(path: Path) -> dict | None:
@@ -93,7 +108,7 @@ def read_batch_status(path: Path) -> dict | None:
         try:
             return json.loads(status_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            if not status_path.with_suffix(status_path.suffix + ".tmp").exists():
+            if attempt == 2:
                 return None
             last_error = FileNotFoundError(status_path)
         except (OSError, json.JSONDecodeError) as exc:
@@ -101,6 +116,113 @@ def read_batch_status(path: Path) -> dict | None:
         if attempt < 2:
             time.sleep(0.005)
     raise ProcessingError("تعذر قراءة حالة معالجة الدفعة.") from last_error
+
+
+def read_review(path: Path, total: int) -> dict:
+    try:
+        payload = json.loads((path / "review.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        payload = {"reviewed": []}
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ProcessingError("تعذر قراءة حالة مراجعة العلامات.") from exc
+    try:
+        reviewed = sorted({int(index) for index in payload.get("reviewed", []) if 0 <= int(index) < total})
+    except (TypeError, ValueError) as exc:
+        raise ProcessingError("حالة مراجعة العلامات غير صالحة.") from exc
+    return {"reviewed": reviewed, "reviewed_count": len(reviewed), "total": total}
+
+
+def batch_source_path(path: Path, source: dict) -> Path:
+    source_pdf = (path / str(source["base_pdf"])).resolve()
+    if path not in source_pdf.parents or not source_pdf.is_file():
+        raise ProcessingError("مسار ملف المصدر غير صالح.")
+    return source_pdf
+
+
+def rendering_settings(
+    font_name: str,
+    font_size: int,
+    opacity: float,
+    rotation: int,
+    color: str,
+    position: str,
+) -> dict:
+    return {
+        "font_name": font_name,
+        "font_size": font_size,
+        "opacity": opacity,
+        "rotation": rotation,
+        "color": color,
+        "position": position,
+    }
+
+
+def preflight_batch(path: Path, metadata: dict, settings: dict, filename_mode: str) -> dict:
+    if filename_mode not in FILENAME_MODES:
+        raise ProcessingError("نمط أسماء الملفات غير صالح.")
+    if settings["position"] not in POSITIONS:
+        raise ProcessingError("موضع العلامة غير صالح.")
+    first_source = metadata["sources"][0]
+    with fitz.open(batch_source_path(path, first_source)) as document:
+        page_rect = document[0].rect
+        page_width, page_height = page_rect.width, page_rect.height
+    cleaned_sources = [clean_source_stem(str(source["filename"]), max_length=300) for source in metadata["sources"]]
+    source_collisions = {name.casefold() for name in cleaned_sources if sum(item.casefold() == name.casefold() for item in cleaned_sources) > 1}
+    items: list[dict] = []
+    for index, watermark in enumerate(metadata["watermarks"]):
+        text = str(watermark["watermark_text"])
+        messages: list[str] = []
+        level = "ok"
+        glyphs = glyph_preflight(text, str(settings["font_name"]))
+        if not glyphs["supported"]:
+            level = "error"
+            messages.append("تعذر العثور على خط يغطي جميع الرموز.")
+        if len(text) > 180 or any(len(line) > 100 for line in text.splitlines()):
+            if level != "error":
+                level = "warning"
+            messages.append("النص طويل؛ راجع المعاينة الدقيقة.")
+        if level != "error":
+            try:
+                width, height = watermark_pixel_size(
+                    text,
+                    int(settings["font_size"]),
+                    str(settings["color"]),
+                    float(settings["opacity"]),
+                    int(settings["rotation"]),
+                    str(settings["font_name"]),
+                )
+                width_points, height_points = width / 2, height / 2
+                overflow = (
+                    width_points > page_width * (0.75 if settings["position"] == "tiled" else 0.9)
+                    or height_points > page_height * (0.55 if settings["position"] == "tiled" else 0.9)
+                )
+                if overflow:
+                    level = "warning"
+                    messages.append("قد يتجاوز النص مساحة العرض؛ راجع الحجم والموضع.")
+            except ProcessingError as exc:
+                level = "error"
+                messages.append(str(exc))
+        names = source_pdf_names(
+            [str(source["filename"]) for source in metadata["sources"]],
+            str(watermark["output_name"]),
+            filename_mode,
+        )
+        if source_collisions and level == "ok":
+            level = "warning"
+            messages.append("تم حل أسماء ملفات مصدر متشابهة تلقائيًا.")
+        items.append(
+            {
+                "index": index,
+                "state": level,
+                "messages": messages or ["جاهز"],
+                "watermark_text": text,
+                "output_name": str(watermark["output_name"]),
+                "line_fonts": glyphs["line_fonts"],
+                "max_zip_path": max(len(zip_path(str(watermark["output_name"]), name)) for name in names),
+            }
+        )
+    counts = {state: sum(item["state"] == state for item in items) for state in ("ok", "warning", "error")}
+    return {"items": items, "summary": counts, "total": len(items)}
 
 
 def status_payload(
@@ -342,6 +464,7 @@ async def create_batch_job(
             "created_at": int(time.time()),
         }
         (path / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+        atomic_write_json(path / "review.json", {"reviewed": []})
         return {**metadata, "preview_url": f"/api/jobs/{job_id}/preview"}
     except Exception:
         for upload in files:
@@ -362,6 +485,7 @@ def generate_batch_archive(
     position: str,
     page_mode: str,
     custom_pages: str,
+    filename_mode: str = "source",
     progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> int:
     sources = metadata["sources"]
@@ -378,14 +502,9 @@ def generate_batch_archive(
     temporary_pdf = path / "batch-output.tmp.pdf"
     temporary_zip.unlink(missing_ok=True)
     temporary_pdf.unlink(missing_ok=True)
-    source_counts: dict[str, int] = {}
-    source_numbers: list[int] = []
-    for source in sources:
-        key = Path(str(source["filename"])).stem.casefold()
-        source_counts[key] = source_counts.get(key, 0) + 1
-        source_numbers.append(source_counts[key])
     generated = 0
     total = len(sources) * len(watermarks)
+    manifest_entries: list[dict[str, str]] = []
     try:
         with zipfile.ZipFile(temporary_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6, allowZip64=True) as archive:
             for watermark in watermarks:
@@ -398,10 +517,9 @@ def generate_batch_archive(
                     font_name,
                 )
                 output_name = str(watermark["output_name"])
+                filenames = source_pdf_names([str(source["filename"]) for source in sources], output_name, filename_mode)
                 for index, source in enumerate(sources):
-                    source_pdf = (path / str(source["base_pdf"])).resolve()
-                    if path not in source_pdf.parents:
-                        raise ProcessingError("مسار ملف المصدر غير صالح.")
+                    source_pdf = batch_source_path(path, source)
                     create_watermarked_pdf(
                         source_pdf,
                         temporary_pdf,
@@ -412,14 +530,24 @@ def generate_batch_archive(
                         image_position="center",
                         image_scale=25,
                     )
-                    filename = output_pdf_name(str(source["filename"]), output_name, duplicate_number=source_numbers[index])
-                    archive.write(temporary_pdf, zip_path(output_name, filename))
+                    filename = filenames[index]
+                    archive_name = zip_path(output_name, filename)
+                    archive.write(temporary_pdf, archive_name)
+                    manifest_entries.append(
+                        {
+                            "output_folder": output_name,
+                            "generated_file": Path(archive_name).name,
+                            "original_file": str(source["filename"]),
+                            "watermark_text": str(watermark["watermark_text"]),
+                        }
+                    )
                     temporary_pdf.unlink()
                     generated += 1
                     if progress_callback:
                         progress_callback(generated, total, "generating")
             if progress_callback:
                 progress_callback(generated, total, "zipping")
+            archive.writestr("_manifest.csv", manifest_csv_bytes(manifest_entries))
         temporary_zip.replace(final_zip)
         return generated
     finally:
@@ -427,23 +555,28 @@ def generate_batch_archive(
         temporary_zip.unlink(missing_ok=True)
 
 
-def validate_batch_generation(metadata: dict, settings: dict) -> None:
+def validate_batch_generation(path: Path, metadata: dict, settings: dict, strict_review: bool) -> None:
     if settings["position"] not in POSITIONS:
         raise ProcessingError("موضع العلامة غير صالح.")
-    watermarks = metadata["watermarks"]
-    validate_text_watermark_settings(
-        str(watermarks[0]["watermark_text"]),
-        int(settings["font_size"]),
-        str(settings["color"]),
-        float(settings["opacity"]),
-        int(settings["rotation"]),
-        str(settings["font_name"]),
-    )
+    if settings["filename_mode"] not in FILENAME_MODES:
+        raise ProcessingError("نمط أسماء الملفات غير صالح.")
+    for watermark in metadata["watermarks"]:
+        validate_text_watermark_settings(
+            str(watermark["watermark_text"]),
+            int(settings["font_size"]),
+            str(settings["color"]),
+            float(settings["opacity"]),
+            int(settings["rotation"]),
+            str(settings["font_name"]),
+        )
     for source in metadata["sources"]:
         try:
             parse_pages(str(settings["page_mode"]), str(settings["custom_pages"]), int(source["page_count"]))
         except ProcessingError as exc:
             raise ProcessingError(f"الملف {source['filename']}: {exc}") from exc
+    review = read_review(path, int(metadata["watermark_count"]))
+    if strict_review and review["reviewed_count"] != review["total"]:
+        raise ProcessingError("يجب اعتماد جميع العلامات قبل التصدير عند تفعيل المراجعة الصارمة.")
 
 
 async def run_batch_worker(job_id: str, path: Path, metadata: dict, settings: dict) -> None:
@@ -537,7 +670,119 @@ async def get_batch_job(job_id: str):
     metadata = load_metadata(path)
     if metadata.get("kind") != "batch":
         raise HTTPException(404, "مهمة الدفعة غير موجودة.")
-    return {**metadata, "preview_url": f"/api/jobs/{job_id}/preview"}
+    return {
+        **metadata,
+        "preview_url": f"/api/jobs/{job_id}/preview",
+        "review": read_review(path, int(metadata["watermark_count"])),
+    }
+
+
+@app.post("/api/batch/jobs/{job_id}/preflight")
+async def batch_preflight(
+    job_id: str,
+    font_name: Annotated[str, Form()] = "noto-sans",
+    font_size: Annotated[int, Form()] = 48,
+    opacity: Annotated[float, Form()] = 0.25,
+    rotation: Annotated[int, Form()] = -35,
+    color: Annotated[str, Form()] = "#1f2937",
+    position: Annotated[str, Form()] = "center",
+    filename_mode: Annotated[str, Form()] = "source",
+):
+    path = job_dir(job_id)
+    metadata = load_metadata(path)
+    if metadata.get("kind") != "batch":
+        raise HTTPException(404, "مهمة الدفعة غير موجودة.")
+    settings = rendering_settings(font_name, font_size, opacity, rotation, color, position)
+    result = await asyncio.to_thread(preflight_batch, path, metadata, settings, filename_mode)
+    result["review"] = read_review(path, int(metadata["watermark_count"]))
+    atomic_write_json(path / "preflight.json", {"settings": {**settings, "filename_mode": filename_mode}, "result": result})
+    return result
+
+
+@app.get("/api/batch/jobs/{job_id}/review")
+async def get_batch_review(job_id: str):
+    path = job_dir(job_id)
+    metadata = load_metadata(path)
+    if metadata.get("kind") != "batch":
+        raise HTTPException(404, "مهمة الدفعة غير موجودة.")
+    return read_review(path, int(metadata["watermark_count"]))
+
+
+@app.post("/api/batch/jobs/{job_id}/review/{watermark_index}")
+async def set_batch_review(job_id: str, watermark_index: int, reviewed: Annotated[bool, Form()] = True):
+    path = job_dir(job_id)
+    metadata = load_metadata(path)
+    if metadata.get("kind") != "batch":
+        raise HTTPException(404, "مهمة الدفعة غير موجودة.")
+    total = int(metadata["watermark_count"])
+    if watermark_index < 0 or watermark_index >= total:
+        raise HTTPException(404, "العلامة المائية غير موجودة.")
+    lock = job_locks.setdefault(job_id, asyncio.Lock())
+    async with lock:
+        state = read_review(path, total)
+        approved = set(state["reviewed"])
+        if reviewed:
+            approved.add(watermark_index)
+        else:
+            approved.discard(watermark_index)
+        atomic_write_json(path / "review.json", {"reviewed": sorted(approved)})
+        return read_review(path, total)
+
+
+@app.post("/api/batch/jobs/{job_id}/preview")
+async def exact_batch_preview(
+    job_id: str,
+    source_index: Annotated[int, Form()] = 0,
+    watermark_index: Annotated[int, Form()] = 0,
+    page_number: Annotated[int, Form()] = 1,
+    font_name: Annotated[str, Form()] = "noto-sans",
+    font_size: Annotated[int, Form()] = 48,
+    opacity: Annotated[float, Form()] = 0.25,
+    rotation: Annotated[int, Form()] = -35,
+    color: Annotated[str, Form()] = "#1f2937",
+    position: Annotated[str, Form()] = "center",
+):
+    path = job_dir(job_id)
+    metadata = load_metadata(path)
+    if metadata.get("kind") != "batch":
+        raise HTTPException(404, "مهمة الدفعة غير موجودة.")
+    if source_index < 0 or source_index >= len(metadata["sources"]):
+        raise ProcessingError("الملف المحدد غير صالح.")
+    if watermark_index < 0 or watermark_index >= len(metadata["watermarks"]):
+        raise ProcessingError("العلامة المحددة غير صالحة.")
+    source = metadata["sources"][source_index]
+    if page_number < 1 or page_number > int(source["page_count"]):
+        raise ProcessingError(f"يجب أن تكون الصفحة بين 1 و {source['page_count']}.")
+    text = str(metadata["watermarks"][watermark_index]["watermark_text"])
+    validate_text_watermark_settings(text, font_size, color, opacity, rotation, font_name)
+    if position not in POSITIONS:
+        raise ProcessingError("موضع العلامة غير صالح.")
+    settings = rendering_settings(font_name, font_size, opacity, rotation, color, position)
+    cache_payload = {
+        "source_index": source_index,
+        "watermark_index": watermark_index,
+        "page_number": page_number,
+        **settings,
+    }
+    cache_key = hashlib.sha256(json.dumps(cache_payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    cache_dir = path / "preview-cache"
+    cache_dir.mkdir(exist_ok=True)
+    output = cache_dir / f"{cache_key}.png"
+    lock_key = f"{job_id}:{cache_key}"
+    lock = preview_locks.setdefault(lock_key, asyncio.Lock())
+    cache_state = "HIT"
+    async with lock:
+        if not output.is_file():
+            cache_state = "MISS"
+            await asyncio.to_thread(
+                render_exact_preview,
+                batch_source_path(path, source),
+                output,
+                page_number - 1,
+                text=text,
+                **settings,
+            )
+    return FileResponse(output, media_type="image/png", headers={"X-Preview-Cache": cache_state, "X-Preview-Key": cache_key})
 
 
 @app.get("/api/batch/jobs/{job_id}/status")
@@ -563,6 +808,8 @@ async def generate_batch(
     position: Annotated[str, Form()] = "center",
     page_mode: Annotated[str, Form()] = "all",
     custom_pages: Annotated[str, Form()] = "",
+    filename_mode: Annotated[str, Form()] = "source",
+    strict_review: Annotated[bool, Form()] = False,
 ):
     path = job_dir(job_id)
     metadata = load_metadata(path)
@@ -585,10 +832,11 @@ async def generate_batch(
             "position": position,
             "page_mode": page_mode,
             "custom_pages": custom_pages,
+            "filename_mode": filename_mode,
         }
-        validate_batch_generation(metadata, settings)
+        validate_batch_generation(path, metadata, settings, strict_review)
         (path / "batch.zip").unlink(missing_ok=True)
-        atomic_write_json(path / "generation.json", settings)
+        atomic_write_json(path / "generation.json", {**settings, "strict_review": strict_review})
         queued = status_payload(
             state="queued",
             stage="preparing",
@@ -740,3 +988,5 @@ async def delete_job(job_id: str):
         raise HTTPException(409, "لا يمكن حذف الدفعة أثناء المعالجة.")
     shutil.rmtree(path)
     job_locks.pop(job_id, None)
+    for key in [key for key in preview_locks if key.startswith(f"{job_id}:")]:
+        preview_locks.pop(key, None)

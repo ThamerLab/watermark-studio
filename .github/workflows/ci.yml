@@ -37,26 +37,43 @@ jobs:
           done
           docker logs watermark-studio-test
           exit 1
-      - name: Verify real PowerPoint batch conversion and ZIP
+      - name: Verify real mixed-script preview and Windows-friendly batch ZIP
         run: |
           python3 -m pip install --quiet python-pptx PyMuPDF
           python3 - <<'PY'
           import csv
+          import fitz
           from pptx import Presentation
           deck = Presentation()
           slide = deck.slides.add_slide(deck.slide_layouts[1])
           slide.shapes.title.text = "Watermark Studio"
           slide.placeholders[1].text = "اختبار تحويل PowerPoint باللغة العربية"
-          deck.save("/tmp/watermark-studio.pptx")
+          deck.save("/tmp/Z. PAT02.TM02 - Performance Audit Planning_sanitized.pptx")
+          document = fitz.open()
+          page = document.new_page(width=500, height=700)
+          page.insert_text((50, 70), "PDF reference")
+          document.save("/tmp/Z. PAT02.TM03 - تصميم مهمة الرقابة_sanitized_sanitized.pdf")
+          document.close()
           with open("/tmp/watermarks.csv", "w", encoding="utf-8-sig", newline="") as stream:
               writer = csv.writer(stream)
               writer.writerow(["watermark_text", "output_name"])
-              writer.writerow(["نسخة خاصة - للاستخدام الداخلي فقط", "نسخة داخلية"])
-              writer.writerow(["CONFIDENTIAL - ABC Company", "ABC Company"])
+              writer.writerow(["محمد أحمد", "محمد أحمد"])
+              writer.writerow(["Abdullah Yaseen Abdullah Abualkheer ACA - 2026 - 001", "Abdullah Yaseen Abdullah Abualkheer ACA - 2026 - 001"])
+              writer.writerow(["نسخة خاصة - Abdullah Alharbi - ACA 2026", "Mixed Review"])
+              writer.writerow(["Long watermark\n" * 15, "Long Review"])
           PY
-          curl -fsS -F "files=@/tmp/watermark-studio.pptx" -F "watermarks_csv=@/tmp/watermarks.csv" \
+          curl -fsS -F "files=@/tmp/Z. PAT02.TM02 - Performance Audit Planning_sanitized.pptx" \
+            -F "files=@/tmp/Z. PAT02.TM03 - تصميم مهمة الرقابة_sanitized_sanitized.pdf" \
+            -F "watermarks_csv=@/tmp/watermarks.csv" \
             http://127.0.0.1:18080/api/batch/jobs >/tmp/batch.json
-          job_id=$(python3 -c "import json; result=json.load(open('/tmp/batch.json')); assert result['output_count']==2; print(result['id'])")
+          job_id=$(python3 -c "import json; result=json.load(open('/tmp/batch.json')); assert result['output_count']==8; print(result['id'])")
+          curl -fsS -X POST -F "font_name=noto-naskh" -F "position=tiled" -F "filename_mode=source" \
+            "http://127.0.0.1:18080/api/batch/jobs/${job_id}/preflight" >/tmp/preflight.json
+          python3 -c "import json; result=json.load(open('/tmp/preflight.json')); assert result['summary']['error']==0 and result['summary']['warning']>=1"
+          curl -fsS -X POST -F "watermark_index=1" -F "source_index=0" -F "page_number=1" \
+            -F "font_name=noto-naskh" -F "position=tiled" \
+            "http://127.0.0.1:18080/api/batch/jobs/${job_id}/preview" >/tmp/exact-preview.png
+          python3 -c "assert open('/tmp/exact-preview.png','rb').read(8)==b'\x89PNG\r\n\x1a\n'"
           curl -fsS -X POST -F "font_name=noto-naskh" -F "position=tiled" -F "page_mode=all" \
             "http://127.0.0.1:18080/api/batch/jobs/${job_id}/generate" >/tmp/generated.json
           python3 -c "import json; result=json.load(open('/tmp/generated.json')); assert result['status']=='queued' and result['status_url'].endswith('/status')"
@@ -69,17 +86,23 @@ jobs:
             sleep 1
           done
           test "$state" = "ready"
-          python3 -c "import json; result=json.load(open('/tmp/batch-status.json')); assert result['percent']==100 and result['generated_count']==2"
+          python3 -c "import json; result=json.load(open('/tmp/batch-status.json')); assert result['percent']==100 and result['generated_count']==8"
           curl -fsS "http://127.0.0.1:18080/api/batch/jobs/${job_id}/download" >/tmp/batch.zip
           python3 - <<'PY'
-          import io, zipfile
+          import csv, io, zipfile
           import fitz
           with zipfile.ZipFile("/tmp/batch.zip") as archive:
               names = archive.namelist()
-              assert names == [
-                  "نسخة داخلية/watermark-studio - نسخة داخلية.pdf",
-                  "ABC Company/watermark-studio - ABC Company.pdf",
-              ]
-              with fitz.open(stream=archive.read(names[0]), filetype="pdf") as result:
+              assert len(names) == 9 and "_manifest.csv" in names and archive.testzip() is None
+              assert all(len(name) <= 175 for name in names)
+              assert "محمد أحمد/Z. PAT02.TM02 - Performance Audit Planning.pdf" in names
+              assert "محمد أحمد/Z. PAT02.TM03 - تصميم مهمة الرقابة.pdf" in names
+              assert not any("Abdullah Yaseen" in name.rsplit("/", 1)[-1] for name in names if name.endswith(".pdf"))
+              manifest = archive.read("_manifest.csv")
+              assert manifest.startswith(b"\xef\xbb\xbf")
+              rows = list(csv.DictReader(io.StringIO(manifest.decode("utf-8-sig"))))
+              assert len(rows) == 8 and rows[0]["watermark_text"] == "محمد أحمد"
+              assert rows[0]["original_file"].endswith("_sanitized.pptx")
+              with fitz.open(stream=archive.read("محمد أحمد/Z. PAT02.TM02 - Performance Audit Planning.pdf"), filetype="pdf") as result:
                   assert result.page_count == 1 and result[0].get_images(full=True)
           PY

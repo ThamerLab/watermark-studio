@@ -88,7 +88,8 @@ def test_generate_returns_immediately_and_prevents_duplicate_workers(tmp_path, m
         downloaded = client.get(final_status["download_url"])
         assert downloaded.status_code == 200
         with zipfile.ZipFile(io.BytesIO(downloaded.content)) as archive:
-            assert len(archive.namelist()) == 4
+            assert len(archive.namelist()) == 5
+            assert "_manifest.csv" in archive.namelist()
 
         existing = client.post(f"/api/batch/jobs/{batch['id']}/generate", data={"position": "center"})
         assert existing.status_code == 202
@@ -136,7 +137,7 @@ def test_progress_callback_increments_after_each_pdf_and_then_zips(tmp_path):
         (4, 4, "zipping"),
     ]
     with zipfile.ZipFile(path / "batch.zip") as archive:
-        assert len(archive.namelist()) == 4
+        assert len(archive.namelist()) == 5
 
 
 def test_failed_worker_persists_safe_error_and_never_exposes_zip(tmp_path, monkeypatch):
