@@ -139,7 +139,17 @@ $('generateButton').addEventListener('click', async () => {
   catch (error) { showError('errorBox', error.message); }
   finally { button.disabled = false; button.querySelector('span').textContent = 'إنشاء PDF'; }
 });
-async function deleteJob(current) { if (!current) return; try { await api(`/api/jobs/${current.id}`, {method: 'DELETE'}); } catch {} location.reload(); }
+async function deleteJob(current) {
+  if (!current) return;
+  try {
+    await api(`/api/jobs/${current.id}`, {method: 'DELETE'});
+    if (localStorage.getItem('watermarkBatchJobId') === current.id) localStorage.removeItem('watermarkBatchJobId');
+    location.reload();
+  } catch (error) {
+    const errorId = current === batchJob ? 'batchErrorBox' : 'errorBox';
+    showError(errorId, error.message);
+  }
+}
 $('deleteButton').addEventListener('click', () => deleteJob(job));
 $('replaceFile').addEventListener('click', () => deleteJob(job));
 
@@ -174,17 +184,21 @@ $('prepareBatchButton').addEventListener('click', async () => {
   const form = new FormData(); batchFiles.forEach(file => form.append('files', file)); form.append('watermarks_csv', batchCsvFile);
   try {
     batchJob = await api('/api/batch/jobs', {method: 'POST', body: form});
-    $('batchSetup').classList.add('hidden'); $('batchWorkspace').classList.remove('hidden');
-    $('batchImported').textContent = `تم استيراد ${batchJob.watermark_count} علامات مائية`;
-    $('batchSourcesSummary').textContent = `${batchJob.source_count} ملفات مصدر · ${formatBytes(batchJob.total_size)}`;
-    $('batchEquation').textContent = `${batchJob.source_count} ملفات × ${batchJob.watermark_count} علامات مائية = ${batchJob.output_count} ملف PDF`;
-    $('batchSampleText').textContent = batchJob.watermarks[0].watermark_text;
-    $('batchPageCount').textContent = `${batchJob.sources[0].page_count} صفحة`;
-    $('batchPagePreview').src = `${batchJob.preview_url}?v=${Date.now()}`;
-    updateBatchPreview();
+    localStorage.setItem('watermarkBatchJobId', batchJob.id);
+    displayBatchJob();
   } catch (error) { showError('batchSetupError', error.message); $('prepareBatchButton').disabled = false; }
   finally { $('batchProgress').classList.add('hidden'); }
 });
+function displayBatchJob() {
+  $('batchSetup').classList.add('hidden'); $('batchWorkspace').classList.remove('hidden');
+  $('batchImported').textContent = `تم استيراد ${batchJob.watermark_count} علامات مائية`;
+  $('batchSourcesSummary').textContent = `${batchJob.source_count} ملفات مصدر · ${formatBytes(batchJob.total_size)}`;
+  $('batchEquation').textContent = `${batchJob.source_count} ملفات × ${batchJob.watermark_count} علامات مائية = ${batchJob.output_count} ملف PDF`;
+  $('batchSampleText').textContent = batchJob.watermarks[0].watermark_text;
+  $('batchPageCount').textContent = `${batchJob.sources[0].page_count} صفحة`;
+  $('batchPagePreview').src = `${batchJob.preview_url}?v=${Date.now()}`;
+  updateBatchPreview();
+}
 function batchSettings() {
   return {text: batchJob ? batchJob.watermarks[0].watermark_text : '', fontName: $('batchFontName').value, fontSize: Number($('batchFontSize').value), opacity: Number($('batchOpacity').value), rotation: Number($('batchRotation').value), color: $('batchColor').value, position: $('batchPosition').value};
 }
@@ -195,6 +209,46 @@ function updateBatchPreview() { updateTextPreview($('batchPreviewCanvas'), $('ba
 ].forEach(([id, output, format]) => $(id).addEventListener('input', () => { $(output).value = format($(id).value); updateBatchPreview(); }));
 ['batchFontName', 'batchColor', 'batchPosition'].forEach(id => $(id).addEventListener('input', updateBatchPreview));
 document.querySelectorAll('input[name=batchPages]').forEach(input => input.addEventListener('change', () => $('batchCustomPagesWrap').classList.toggle('hidden', input.value !== 'custom' || !input.checked)));
+
+let batchPollSequence = 0;
+const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+function showBatchStatus(status) {
+  $('batchGenerationProgress').classList.remove('hidden');
+  $('batchProgressBar').style.width = `${Math.max(0, Math.min(100, status.percent || 0))}%`;
+  $('batchProgressPercent').textContent = `${status.percent || 0}%`;
+  $('batchProgressMessage').textContent = status.message || 'جارٍ معالجة الدفعة';
+  $('batchProgressCount').textContent = `${status.current || 0} من ${status.total || batchJob.output_count} ملف PDF`;
+}
+function finishBatch(status) {
+  showBatchStatus(status);
+  $('batchGenerationProgress').classList.add('hidden');
+  $('batchResultText').textContent = `تم إنشاء ${status.generated_count} ملف PDF بنجاح`;
+  $('batchDownloadLink').href = status.download_url;
+  $('batchResultBox').classList.remove('hidden');
+  $('generateBatchButton').disabled = false;
+  $('generateBatchButton').querySelector('span').textContent = 'إنشاء ملفات الدفعة';
+}
+async function pollBatchStatus(statusUrl) {
+  const sequence = ++batchPollSequence;
+  while (sequence === batchPollSequence) {
+    try {
+      const status = await api(statusUrl);
+      showBatchStatus(status);
+      if (status.state === 'ready') { finishBatch(status); return; }
+      if (status.state === 'failed') {
+        showError('batchErrorBox', status.error || 'فشلت معالجة الدفعة.');
+        $('generateBatchButton').disabled = false;
+        $('generateBatchButton').querySelector('span').textContent = 'إعادة إنشاء ملفات الدفعة';
+        return;
+      }
+    } catch (error) {
+      showError('batchErrorBox', error.message);
+      $('generateBatchButton').disabled = false;
+      return;
+    }
+    await sleep(1000);
+  }
+}
 $('generateBatchButton').addEventListener('click', async () => {
   clearError('batchErrorBox'); $('batchResultBox').classList.add('hidden');
   const button = $('generateBatchButton'); button.disabled = true; button.querySelector('span').textContent = `جارٍ إنشاء ${batchJob.output_count} ملف PDF…`;
@@ -204,9 +258,37 @@ $('generateBatchButton').addEventListener('click', async () => {
   form.append('page_mode', document.querySelector('input[name=batchPages]:checked').value); form.append('custom_pages', $('batchCustomPages').value);
   try {
     const result = await api(`/api/batch/jobs/${batchJob.id}/generate`, {method: 'POST', body: form});
-    $('batchResultText').textContent = `تم إنشاء ${result.generated_count} ملف PDF بنجاح`;
-    $('batchDownloadLink').href = result.download_url; $('batchResultBox').classList.remove('hidden');
-  } catch (error) { showError('batchErrorBox', error.message); }
-  finally { button.disabled = false; button.querySelector('span').textContent = 'إنشاء ملفات الدفعة'; }
+    if (result.state === 'ready') finishBatch(result);
+    else {
+      showBatchStatus({percent: result.percent || 0, current: result.current || 0, total: result.total || batchJob.output_count, message: result.message || 'تمت إضافة الدفعة إلى قائمة المعالجة'});
+      await pollBatchStatus(result.status_url || `/api/batch/jobs/${batchJob.id}/status`);
+    }
+  } catch (error) {
+    showError('batchErrorBox', error.message); button.disabled = false; button.querySelector('span').textContent = 'إنشاء ملفات الدفعة';
+  }
 });
 $('batchDeleteButton').addEventListener('click', () => deleteJob(batchJob));
+
+async function restoreBatchJob() {
+  const savedId = localStorage.getItem('watermarkBatchJobId');
+  if (!savedId) return;
+  try {
+    batchJob = await api(`/api/batch/jobs/${savedId}`);
+    setMode('batch'); displayBatchJob();
+    try {
+      const status = await api(`/api/batch/jobs/${savedId}/status`);
+      if (status.state === 'ready') finishBatch(status);
+      else if (status.state === 'queued' || status.state === 'processing') {
+        $('generateBatchButton').disabled = true;
+        showBatchStatus(status);
+        pollBatchStatus(`/api/batch/jobs/${savedId}/status`);
+      } else if (status.state === 'failed') {
+        showBatchStatus(status);
+        showError('batchErrorBox', status.error || 'فشلت معالجة الدفعة.');
+      }
+    } catch {}
+  } catch {
+    localStorage.removeItem('watermarkBatchJobId');
+  }
+}
+restoreBatchJob();

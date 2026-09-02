@@ -59,6 +59,17 @@ jobs:
           job_id=$(python3 -c "import json; result=json.load(open('/tmp/batch.json')); assert result['output_count']==2; print(result['id'])")
           curl -fsS -X POST -F "font_name=noto-naskh" -F "position=tiled" -F "page_mode=all" \
             "http://127.0.0.1:18080/api/batch/jobs/${job_id}/generate" >/tmp/generated.json
+          python3 -c "import json; result=json.load(open('/tmp/generated.json')); assert result['status']=='queued' and result['status_url'].endswith('/status')"
+          state=""
+          for i in {1..120}; do
+            curl -fsS "http://127.0.0.1:18080/api/batch/jobs/${job_id}/status" >/tmp/batch-status.json
+            state=$(python3 -c "import json; print(json.load(open('/tmp/batch-status.json'))['state'])")
+            if [ "$state" = "ready" ]; then break; fi
+            if [ "$state" = "failed" ]; then cat /tmp/batch-status.json; exit 1; fi
+            sleep 1
+          done
+          test "$state" = "ready"
+          python3 -c "import json; result=json.load(open('/tmp/batch-status.json')); assert result['percent']==100 and result['generated_count']==2"
           curl -fsS "http://127.0.0.1:18080/api/batch/jobs/${job_id}/download" >/tmp/batch.zip
           python3 - <<'PY'
           import io, zipfile

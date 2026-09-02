@@ -1,4 +1,5 @@
 import io
+import time
 import zipfile
 from pathlib import Path
 
@@ -16,6 +17,20 @@ def pdf_bytes(pages: int = 2) -> bytes:
     payload = document.tobytes()
     document.close()
     return payload
+
+
+def wait_for_batch(client: TestClient, job_id: str, timeout: float = 10) -> tuple[dict, list[dict]]:
+    deadline = time.monotonic() + timeout
+    observed = []
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/batch/jobs/{job_id}/status")
+        assert response.status_code == 200, response.text
+        status = response.json()
+        observed.append(status)
+        if status["state"] in {"ready", "failed"}:
+            return status, observed
+        time.sleep(0.02)
+    raise AssertionError("Batch did not reach a terminal state")
 
 
 def test_complete_pdf_job_lifecycle(tmp_path, monkeypatch):
@@ -112,9 +127,17 @@ def test_batch_template_and_complete_generic_batch_lifecycle(tmp_path, monkeypat
             f"/api/batch/jobs/{batch['id']}/generate",
             data={"font_name": "noto-sans", "font_size": "36", "opacity": "0.2", "rotation": "-45", "color": "#1f2937", "position": "tiled", "page_mode": "all", "custom_pages": ""},
         )
-        assert generated.status_code == 200, generated.text
-        assert generated.json()["generated_count"] == 4
-        downloaded = client.get(generated.json()["download_url"])
+        assert generated.status_code == 202, generated.text
+        assert generated.json() == {
+            "status": "queued",
+            "job_id": batch["id"],
+            "status_url": f"/api/batch/jobs/{batch['id']}/status",
+        }
+        final_status, _ = wait_for_batch(client, batch["id"])
+        assert final_status["state"] == "ready", final_status
+        assert final_status["generated_count"] == 4
+        assert final_status["percent"] == 100
+        downloaded = client.get(final_status["download_url"])
         assert downloaded.status_code == 200
         with zipfile.ZipFile(io.BytesIO(downloaded.content)) as archive:
             names = archive.namelist()
@@ -162,6 +185,8 @@ def test_batch_converts_each_pptx_once_before_all_watermarks(tmp_path, monkeypat
             f"/api/batch/jobs/{batch['id']}/generate",
             data={"position": "center", "page_mode": "all"},
         )
-        assert generated.status_code == 200, generated.text
-        assert generated.json()["generated_count"] == 3
+        assert generated.status_code == 202, generated.text
+        final_status, _ = wait_for_batch(client, batch["id"])
+        assert final_status["state"] == "ready", final_status
+        assert final_status["generated_count"] == 3
         assert len(conversions) == 1

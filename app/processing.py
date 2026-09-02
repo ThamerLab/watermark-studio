@@ -165,6 +165,29 @@ def _has_arabic(text: str) -> bool:
     return bool(re.search(r"[\u0600-\u06ff]", text))
 
 
+def validate_text_watermark_settings(
+    text: str,
+    font_size: int,
+    color: str,
+    opacity: float,
+    rotation: int,
+    font_name: str = "noto-sans",
+) -> tuple[tuple[int, int, int], str]:
+    if not text.strip() or len(text) > 1000:
+        raise ProcessingError("نص العلامة مطلوب ويجب ألا يتجاوز 1000 حرف.")
+    if not 8 <= font_size <= 200:
+        raise ProcessingError("حجم الخط يجب أن يكون بين 8 و200.")
+    if not 0.05 <= opacity <= 1:
+        raise ProcessingError("الشفافية غير صالحة.")
+    if not -180 <= rotation <= 180:
+        raise ProcessingError("زاوية الدوران يجب أن تكون بين -180 و180.")
+    try:
+        rgb = ImageColor.getrgb(color)
+    except ValueError as exc:
+        raise ProcessingError("لون العلامة غير صالح.") from exc
+    return rgb, _font_path(font_name)
+
+
 def make_text_watermark(
     text: str,
     font_size: int,
@@ -173,19 +196,10 @@ def make_text_watermark(
     rotation: int,
     font_name: str = "noto-sans",
 ) -> bytes:
-    if not text.strip() or len(text) > 1000:
-        raise ProcessingError("نص العلامة مطلوب ويجب ألا يتجاوز 1000 حرف.")
-    if not 8 <= font_size <= 200:
-        raise ProcessingError("حجم الخط يجب أن يكون بين 8 و200.")
-    if not 0.05 <= opacity <= 1:
-        raise ProcessingError("الشفافية غير صالحة.")
-    try:
-        rgb = ImageColor.getrgb(color)
-    except ValueError as exc:
-        raise ProcessingError("لون العلامة غير صالح.") from exc
+    rgb, font_path = validate_text_watermark_settings(text, font_size, color, opacity, rotation, font_name)
 
     scale = 2
-    font = ImageFont.truetype(_font_path(font_name), font_size * scale)
+    font = ImageFont.truetype(font_path, font_size * scale)
     lines = text.splitlines() or [text]
     scratch = Image.new("RGBA", (1, 1))
     draw = ImageDraw.Draw(scratch)
