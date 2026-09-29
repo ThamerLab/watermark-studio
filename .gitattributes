@@ -1,3 +1,4 @@
 *.sh text eol=lf
+watermark-studio.html linguist-generated=true
 *.yml text eol=lf
 *.yaml text eol=lf

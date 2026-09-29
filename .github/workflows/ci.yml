@@ -9,6 +9,21 @@ permissions:
   contents: read
 
 jobs:
+  standalone:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build:standalone
+      - run: npm run test:standalone
+      - name: Ensure generated HTML is committed
+        shell: bash
+        run: git diff --exit-code -- watermark-studio.html
+
   test:
     runs-on: ubuntu-latest
     steps:

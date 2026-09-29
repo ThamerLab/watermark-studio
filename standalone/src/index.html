@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="إضافة علامات مائية إلى ملفات PDF داخل المتصفح">
+  <title>Watermark Studio — نسخة محلية</title>
+  <style>
+  @font-face{font-family:"Noto Sans Arabic Embedded";src:url(data:font/woff2;base64,/*__NOTO_FONT__*/) format("woff2");font-weight:400;font-style:normal;font-display:swap}
+  /*__STYLES__*/
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">W</span><span>Watermark <b>Studio</b></span></div>
+    <span class="privacy"><i></i> معالجة محلية — ملفاتك لا تغادر جهازك</span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <span class="eyebrow">نسخة محلية تعمل من ملف واحد</span>
+      <h1>علامتك المائية، <em>بخصوصية كاملة.</em></h1>
+      <p>افتح ملف PDF، عاين العلامة، ثم نزّل النسخة النهائية. لا رفع ولا خادم ولا تثبيت.</p>
+    </section>
+
+    <div class="mode-switch" role="tablist" aria-label="وضع المعالجة">
+      <button id="singleTab" class="active" type="button" role="tab" aria-selected="true">ملف واحد</button>
+      <button id="batchTab" type="button" role="tab" aria-selected="false">معالجة دفعة</button>
+    </div>
+
+    <section id="singleMode">
+      <nav class="steps" aria-label="مراحل العمل"><span class="active"><b>١</b> رفع PDF</span><i></i><span><b>٢</b> إعداد العلامة</span><i></i><span><b>٣</b> معاينة وتحميل</span></nav>
+      <section id="singleUploadCard" class="card upload-card">
+        <label id="singleDrop" class="drop-zone" for="singleFile">
+          <input id="singleFile" type="file" accept="application/pdf,.pdf" hidden>
+          <span class="upload-icon">↑</span><strong>اسحب ملف PDF إلى هنا</strong>
+          <span>أو اضغط للاختيار من جهازك</span><small>PDF فقط — حتى 100 ميجابايت</small>
+        </label>
+        <p id="singleUploadError" class="error hidden" role="alert"></p>
+      </section>
+
+      <section id="singleWorkspace" class="workspace hidden">
+        <div class="editor">
+          <div class="card file-card"><div class="file-icon">PDF</div><div><strong id="singleFileName"></strong><span id="singleFileMeta"></span></div><button id="singleReset" class="icon-button" type="button" title="إزالة الملف">×</button></div>
+          <div id="singleSettings"></div>
+        </div>
+        <aside class="preview-panel card">
+          <div class="preview-head"><div><h2>المعاينة</h2><span id="singlePreviewLabel">الصفحة الأولى</span></div><span id="singlePageCount"></span></div>
+          <div class="canvas-wrap"><canvas id="singlePreview"></canvas><div id="singlePreviewBusy" class="canvas-busy hidden">جارٍ تجهيز المعاينة…</div></div>
+          <p class="preview-note">المعاينة تستخدم نفس محرك رسم العلامة المستخدم في الملف النهائي.</p>
+          <button id="singleGenerate" class="primary" type="button"><span>إنشاء وتحميل PDF</span><b>←</b></button>
+          <div id="singleProgress" class="progress-box hidden"><div><span></span></div><strong>جارٍ إنشاء الملف داخل جهازك…</strong></div>
+          <p id="singleError" class="error hidden" role="alert"></p>
+        </aside>
+      </section>
+    </section>
+
+    <section id="batchMode" class="hidden">
+      <nav class="steps batch-steps" aria-label="مراحل الدفعة"><span class="active"><b>١</b> رفع الملفات</span><i></i><span><b>٢</b> قائمة العلامات المائية</span><i></i><span><b>٣</b> شكل العلامة</span><i></i><span><b>٤</b> تحميل ZIP</span></nav>
+      <section id="batchSetup" class="batch-setup">
+        <div class="card batch-input-card">
+          <div class="section-title"><span>01</span><div><h2>رفع الملفات</h2><p>اختر ملف PDF واحدًا أو أكثر</p></div></div>
+          <label id="batchDrop" class="compact-drop" for="batchFiles"><input id="batchFiles" type="file" accept="application/pdf,.pdf" multiple hidden><span class="upload-icon">↑</span><strong>اختر ملفات PDF</strong><small>حتى 100 ميجابايت لكل ملف</small></label>
+          <ul id="batchFileList" class="selected-list"></ul>
+        </div>
+        <div class="card batch-input-card">
+          <div class="section-title"><span>02</span><div><h2>قائمة العلامات المائية</h2><p>أضف نص العلامة المائية في كل صف. اسم المجلد اختياري.</p></div></div>
+          <label class="compact-drop" for="batchCsv"><input id="batchCsv" type="file" accept=".csv,text/csv" hidden><span class="csv-icon">CSV</span><strong id="batchCsvLabel">اختر ملف CSV</strong></label>
+          <button id="downloadTemplate" class="template-link" type="button">تحميل نموذج CSV</button>
+        </div>
+        <button id="batchPrepare" class="primary batch-prepare" type="button" disabled><span>استيراد وتجهيز الدفعة</span><b>←</b></button>
+        <p id="batchSetupError" class="error hidden" role="alert"></p>
+      </section>
+
+      <section id="batchWorkspace" class="workspace hidden">
+        <div class="editor">
+          <div class="card batch-summary"><div><strong id="batchImported"></strong><span id="batchSources"></span></div><b id="batchEquation"></b></div>
+          <div id="batchSettings"></div>
+          <div class="card settings-card">
+            <div class="section-title"><span>04</span><div><h2>الأسماء</h2><p>تنظيم ZIP في مجلد لكل علامة</p></div></div>
+            <label>نمط أسماء الملفات<select id="batchFilenameMode"><option value="source-and-output">اسم الملف + اسم العلامة</option><option value="source">اسم الملف فقط</option></select></label>
+          </div>
+          <div class="card settings-card">
+            <div class="section-title"><span>05</span><div><h2>العلامات المستوردة</h2><p>النص داخل PDF لا يُختصر أبدًا</p></div></div>
+            <div id="batchRows" class="batch-rows"></div>
+          </div>
+        </div>
+        <aside class="preview-panel card">
+          <div class="preview-head"><div><h2>معاينة الدفعة</h2><span id="batchPreviewLabel"></span></div><span id="batchPageCount"></span></div>
+          <div class="canvas-wrap"><canvas id="batchPreview"></canvas><div id="batchPreviewBusy" class="canvas-busy hidden">جارٍ تجهيز المعاينة…</div></div>
+          <p class="preview-note">تعرض المعاينة أول ملف مع أول علامة مائية مستوردة.</p>
+          <button id="batchGenerate" class="primary" type="button"><span>إنشاء وتحميل ZIP</span><b>←</b></button>
+          <div id="batchProgress" class="batch-progress hidden"><div><span id="batchProgressBar"></span></div><strong id="batchProgressText">0%</strong><small id="batchProgressDetail"></small></div>
+          <p id="batchError" class="error hidden" role="alert"></p>
+        </aside>
+      </section>
+    </section>
+  </main>
+
+  <footer><span>Watermark Studio</span><span>لا يتم حفظ أي ملف؛ أغلق الصفحة أو حدّثها لمسح الذاكرة.</span></footer>
+
+  <template id="settingsTemplate">
+    <div class="card settings-card">
+      <div class="section-title"><span class="section-number">01</span><div><h2>العلامة النصية</h2><p>يدعم العربية والإنجليزية وعدة أسطر</p></div></div>
+      <label class="text-field">نص العلامة<textarea data-field="text" rows="3" maxlength="4000" placeholder="مثال: نسخة خاصة — للاستخدام الداخلي فقط">نسخة خاصة</textarea></label>
+      <label>الخط<select data-field="font"><option value="Noto Sans Arabic Embedded">Noto Sans Arabic</option><option value="Tahoma">Tahoma</option><option value="Arial">Arial</option><option value="Georgia">Georgia</option></select></label>
+      <div class="grid two">
+        <label>حجم الخط <output data-output="fontSize">48</output><input data-field="fontSize" type="range" min="8" max="120" value="48"></label>
+        <label>الشفافية <output data-output="opacity">25%</output><input data-field="opacity" type="range" min="5" max="100" value="25"></label>
+        <label>الدوران <output data-output="rotation">-35°</output><input data-field="rotation" type="range" min="-180" max="180" value="-35"></label>
+        <label>اللون<input data-field="color" type="color" value="#1f2937"></label>
+      </div>
+      <label>الموضع<select data-field="position"><option value="center">الوسط</option><option value="tiled">متكرر على الصفحة</option><option value="top-right">أعلى اليمين</option><option value="top-center">أعلى الوسط</option><option value="top-left">أعلى اليسار</option><option value="bottom-right">أسفل اليمين</option><option value="bottom-center">أسفل الوسط</option><option value="bottom-left">أسفل اليسار</option></select></label>
+    </div>
+    <div class="card settings-card image-card">
+      <div class="section-title"><span class="section-number">02</span><div><h2>صورة العلامة <small>اختياري</small></h2><p>PNG أو JPEG</p></div></div>
+      <label class="image-picker"><input data-field="image" type="file" accept="image/png,image/jpeg" hidden><span data-image-label>اختر صورة العلامة</span></label>
+      <button data-clear-image class="text-button hidden" type="button">إزالة الصورة</button>
+      <div class="grid two"><label>الحجم <output data-output="imageScale">25%</output><input data-field="imageScale" type="range" min="5" max="80" value="25"></label><label>الشفافية <output data-output="imageOpacity">30%</output><input data-field="imageOpacity" type="range" min="5" max="100" value="30"></label></div>
+      <label>الموضع<select data-field="imagePosition"><option value="center">الوسط</option><option value="tiled">متكرر على الصفحة</option><option value="top-right">أعلى اليمين</option><option value="top-center">أعلى الوسط</option><option value="top-left">أعلى اليسار</option><option value="bottom-right">أسفل اليمين</option><option value="bottom-center">أسفل الوسط</option><option value="bottom-left">أسفل اليسار</option></select></label>
+    </div>
+    <div class="card settings-card">
+      <div class="section-title"><span class="section-number">03</span><div><h2>الصفحات</h2><p>حدد أين تظهر العلامة</p></div></div>
+      <div class="segmented"><label><input data-field="pages" type="radio" value="all" checked><span>كل الصفحات</span></label><label><input data-field="pages" type="radio" value="first"><span>الأولى فقط</span></label><label><input data-field="pages" type="radio" value="custom"><span>مخصصة</span></label></div>
+      <label data-custom-wrap class="hidden">أرقام الصفحات<input data-field="customPages" type="text" inputmode="numeric" dir="ltr" placeholder="1-3,7,10-12"></label>
+    </div>
+  </template>
+
+  <script>/*__PDF_LIB__*/</script>
+  <script>/*__PDF_JS__*/</script>
+  <script>/*__JSZIP__*/</script>
+  <script>/*__PAPAPARSE__*/</script>
+  <script>window.__PDFJS_WORKER_BASE64__="/*__PDF_WORKER_BASE64__*/";</script>
+  <script>/*__APP__*/</script>
+</body>
+</html>

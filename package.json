@@ -1,0 +1,21 @@
+{
+  "name": "watermark-studio-standalone",
+  "private": true,
+  "version": "2.0.0",
+  "description": "Standalone, browser-only PDF watermarking studio",
+  "scripts": {
+    "build:standalone": "node standalone/build.mjs",
+    "test:standalone": "node standalone/tests/smoke.mjs"
+  },
+  "dependencies": {
+    "@fontsource/noto-sans-arabic": "5.2.6",
+    "jszip": "3.10.1",
+    "papaparse": "5.5.3",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.3.289"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10",
+    "playwright-core": "1.55.0"
+  }
+}
