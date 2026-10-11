@@ -180,7 +180,7 @@ docs/images/             # README illustrations
 
 ## 🤝 Contributing
 
-Issues and pull requests are welcome. Include the edition used, OS/browser or Docker environment, clear reproduction steps, **sanitized** sample files and expected/actual behavior. Run relevant tests before proposing changes. Please don't attach confidential PDFs.
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for development and review standards, and [SECURITY.md](SECURITY.md) for responsible vulnerability reporting. Include the edition used, OS/browser or Docker environment, clear reproduction steps, **sanitized** sample files and expected/actual behavior. Run relevant tests before proposing changes. Please don't attach confidential PDFs.
 
 ## 📄 License
 
